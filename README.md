@@ -11,5 +11,11 @@ The program provides:
 
 3)Laplacian smoothing
 
+4)Laplacian surface editing.
+
+We are trying to apply local rotation on surface editting...
+
+Reference: http://igl.ethz.ch/projects/Laplacian-mesh-processing/Laplacian-mesh-editing/
+
 Proudly presented by Jianhui Zhang, @w1ndy's father
 Licensed under MIT
