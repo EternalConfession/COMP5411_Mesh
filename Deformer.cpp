@@ -56,6 +56,9 @@ Deformer::~Deformer() {
     }
 }
 
+
+
+
 // this is the place where the editing techniques take place
 void Deformer::Deform() {
     /*************************/
@@ -96,7 +99,7 @@ void Deformer::Deform() {
     
 }
 
-// build the differential operator matrix and do factorization
+
 void Deformer::BuildSystemMatrix() {
     /*************************/
     /* insert your code here */
@@ -111,17 +114,21 @@ void Deformer::BuildSystemMatrix() {
     // First implement the naive method
     // Solve the x,y,z at one time using (number of vertices + number of selected vertices) * (3 * number of vertices) matrix.
     
+    
     VertexList vList = mesh->vList;
     int numberVertice = vList.size();
     int numberConstrian = roi_list.size();
     
-    SparseMatrixBuilder A;
-    SparseMatrixBuilder b;
+    SparseMatrixBuilder A;   //This is to build the Matrix A
+    SparseMatrixBuilder b;   //This is to build the vector b
     Eigen::SparseMatrix<double> A_Original;
     Eigen::SparseMatrix<double> A_Modified;
     
-   
-    SparseMatrixBuilder L;
+    
+    SparseMatrixBuilder L; //This is the matrix caculate the meancurvature
+    
+    //Here we constructe L for calculating mean curvature
+    //And we consturcte A via adding some 1 under L...
     for (int i = 0; i < numberVertice; ++i)
     {
         std::vector<Eigen::Triplet<double> > rowWeights(0);
@@ -153,12 +160,11 @@ void Deformer::BuildSystemMatrix() {
         A.AddEntry(i + numberVertice, i + numberVertice, 1);
         A.AddEntry(i + 2*numberVertice, i + 2*numberVertice, 1);
     }
-    
-
     Eigen::SparseMatrix<double> Laplacin = L.ToSparseMatrix(numberVertice, numberVertice);
+    
     SparseMatrixBuilder V;
-    Eigen::SparseMatrix<double> V_;
-    Eigen::SparseMatrix<double> MeanCurve;
+    Eigen::SparseMatrix<double> V_; //A vector store meancurvature and handles
+    Eigen::SparseMatrix<double> MeanCurve; //MeanCurvature.
     for (int i = 0; i < numberVertice; ++i)
     {
         Eigen::Vector3d p = vList[i]->Position();
@@ -169,13 +175,114 @@ void Deformer::BuildSystemMatrix() {
     V_ = V.ToSparseMatrix(numberVertice, 3);
     MeanCurve = Laplacin*V_;
     
+    
     for(int i=0; i<numberVertice; ++i)
     {
-        b.AddEntry(i, 0, MeanCurve.coeff(i, 0));
-        b.AddEntry(i + numberVertice, 0, MeanCurve.coeff(i, 1));
-        b.AddEntry(i + 2*numberVertice, 0, MeanCurve.coeff(i, 2));
+        double x = MeanCurve.coeff(i,0);
+        double y = MeanCurve.coeff(i,0);
+        double z = MeanCurve.coeff(i,0);
+        /*
+        //Here we consturct Ai for each vertex
+        //And we calculate s, vector h, vector t.
+        if(true)
+        {
+            Vertex *pV = vList[i];
+            int K = pV->Valence();
+            Eigen::MatrixXd Ati(3*(K+1), 7);
+            Eigen::VectorXd bti(3*(K+1));
+            Eigen::VectorXd sht(7);
+            double vx = pV->Position()[0];
+            double vy = pV->Position()[1];
+            double vz = pV->Position()[2];
+            Ati(0, 0) = vx;
+            Ati(0, 1) = 0;
+            Ati(0, 2) = vz;
+            Ati(0, 3) = -vy;
+            Ati(0, 4) = 1;
+            Ati(0, 5) = 0;
+            Ati(0, 6) = 0;
+            bti(0) = vx;
+            
+            Ati(1, 0) = vy;
+            Ati(1, 1) = -vz;
+            Ati(1, 2) = 0;
+            Ati(1, 3) = vx;
+            Ati(1, 4) = 0;
+            Ati(1, 5) = 1;
+            Ati(1, 6) = 0;
+            bti(1) = vy;
+            
+            Ati(2, 0) = vz;
+            Ati(2, 1) = vy;
+            Ati(2, 2) = -vx;
+            Ati(2, 3) = 0;
+            Ati(2, 4) = 0;
+            Ati(2, 5) = 0;
+            Ati(2, 6) = 1;
+            bti(2) = vz;
+            
+            OneRingVertex ring(pV);
+            Vertex *pCurr = NULL;
+            int counter = 0;
+            while( (pCurr=ring.NextVertex()) )
+            {
+                counter++;
+                vx = pCurr->Position()[0];
+                vy = pCurr->Position()[1];
+                vz = pCurr->Position()[2];
+                
+                Ati(counter*3, 0) = vx;
+                Ati(counter*3, 1) = 0;
+                Ati(counter*3, 2) = vz;
+                Ati(counter*3, 3) = -vy;
+                Ati(counter*3, 4) = 1;
+                Ati(counter*3, 5) = 0;
+                Ati(counter*3, 6) = 0;
+                bti(counter*3) = vx;
+                
+                Ati(counter*3+1, 0) = vy;
+                Ati(counter*3+1, 1) = -vz;
+                Ati(counter*3+1, 2) = 0;
+                Ati(counter*3+1, 3) = vx;
+                Ati(counter*3+1, 4) = 0;
+                Ati(counter*3+1, 5) = 1;
+                Ati(counter*3+1, 6) = 0;
+                bti(counter*3+1) = vy;
+                
+                Ati(counter*3+2, 0) = vz;
+                Ati(counter*3+2, 1) = vy;
+                Ati(counter*3+2, 2) = -vx;
+                Ati(counter*3+2, 3) = 0;
+                Ati(counter*3+2, 4) = 0;
+                Ati(counter*3+2, 5) = 0;
+                Ati(counter*3+2, 0) = 1;
+                bti(counter*3+2) = vz;
+            }
+            Eigen::MatrixXd AT = Ati.transpose();
+            Eigen::MatrixXd AA = AT*Ati;
+            sht = AA.reverse()*AT*bti;
+            bool isNan = false;
+            for(int j = 0; j < 7; j++)
+            {
+                if ((sht(j) != sht(j)))
+                {
+                    isNan = true;
+                }
+            }
+            if (!isNan)
+            {
+                //std::cout << sht << std::endl;
+                x = sht(0)*x - sht(3)*y + sht(2)*z +sht(4);
+                y = sht(3)*x + sht(0)*y - sht(1)*z +sht(5);
+                z = -sht(2)*x +sht(1)*y + sht(0)*z +sht(6);
+            }
+        }*/
+        b.AddEntry(i, 0, x);
+        b.AddEntry(i + numberVertice, 0, y);
+        b.AddEntry(i + 2*numberVertice, 0, z);
     }
     
+    //Add handles to the vector
     for(int i = 0; i < numberConstrian; ++i)
     {
         Vertex *pV = roi_list[i];
@@ -184,88 +291,12 @@ void Deformer::BuildSystemMatrix() {
         A.AddEntry(i + 3*numberVertice + 2*numberConstrian, pV->Index() + 2*numberVertice, handleWeight);
     }
     
+    //Solve the linear system
     A_Original = A.ToSparseMatrix(3*numberVertice + 3*numberConstrian, 3*numberVertice);
     A_Trans = A_Original.transpose();
     A_Modified = A_Trans * A_Original;
     
     solver = new SparseLinearSystemSolver(A_Modified);
     b_ = b.ToSparseMatrix(3 * numberVertice + 3 * numberConstrian, 1);
-    
-    /*
-     //with local tranforamtion
-     // reference: http://igl.ethz.ch/projects/Laplacian-mesh-processing/Laplacian-mesh-editing/index.php
-     
-     SparseMatrixBuilder LPrime;
-     for(int i=0; i<N; ++i)
-     {
-     Vertex *pV = vList[i];
-     int K = pV->Valence();
-     Eigen::MatrixXd A(3*K+1, 7);
-     double vx = pV->Position()[0];
-     double vy = pV->Position()[1];
-     double vz = pV->Position()[2];
-     A(0, 0) = vx;
-     A(0, 1) = 0;
-     A(0, 2) = vz;
-     A(0, 3) = -vy;
-     A(0, 4) = 1;
-     A(0, 5) = 0;
-     A(0, 6) = 0;
-     
-     A(1, 0) = vy;
-     A(1, 1) = -vz;
-     A(1, 2) = 0;
-     A(1, 3) = vx;
-     A(1, 4) = 0;
-     A(1, 5) = 1;
-     A(1, 0) = 0;
-     
-     A(2, 0) = vz;
-     A(2, 1) = vy;
-     A(2, 2) = -vx;
-     A(2, 3) = 0;
-     A(2, 4) = 0;
-     A(2, 5) = 0;
-     A(2, 0) = 1;
-     
-     OneRingVertex ring(pV);
-     Vertex *pCurr = NULL;
-     int counter = 1;
-     while( (pCurr=ring.NextVertex()) )
-     {
-     vx = pCurr->Position()[0];
-     vy = pCurr->Position()[1];
-     vz = pCurr->Position()[2];
-     
-     A(counter*3+1, 0) = vx;
-     A(counter*3+1, 1) = 0;
-     A(counter*3+1, 2) = vz;
-     A(counter*3+1, 3) = -vy;
-     A(counter*3+1, 4) = 1;
-     A(counter*3+1, 5) = 0;
-     A(counter*3+1, 6) = 0;
-     
-     A(counter*3+2, 0) = vy;
-     A(counter*3+2, 1) = -vz;
-     A(counter*3+2, 2) = 0;
-     A(counter*3+2, 3) = vx;
-     A(counter*3+2, 4) = 0;
-     A(counter*3+2, 5) = 1;
-     A(counter*3+2, 0) = 0;
-     
-     A(counter*3+3, 0) = vz;
-     A(counter*3+3, 1) = vy;
-     A(counter*3+3, 2) = -vx;
-     A(counter*3+3, 3) = 0;
-     A(counter*3+3, 4) = 0;
-     A(counter*3+3, 5) = 0;
-     A(counter*3+3, 0) = 1;
-     }
-     // compute T
-     Eigen::MatrixXd THelp = eigenPinv(A);
-     
-     }
-     #endif
-     */
     
 }
