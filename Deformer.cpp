@@ -115,6 +115,9 @@ void Deformer::BuildSystemMatrix() {
     // Solve the x,y,z at one time using (number of vertices + number of selected vertices) * (3 * number of vertices) matrix.
     
     
+    // Set wether use locarotation
+    localRotation = true;
+    
     VertexList vList = mesh->vList;
     int numberVertice = vList.size();
     int numberConstrian = roi_list.size();
@@ -175,22 +178,140 @@ void Deformer::BuildSystemMatrix() {
     V_ = V.ToSparseMatrix(numberVertice, 3);
     MeanCurve = Laplacin*V_;
     
-    
+    if(!localRotation)
+    {
     for(int i=0; i<numberVertice; ++i)
     {
         double x = MeanCurve.coeff(i,0);
         double y = MeanCurve.coeff(i,0);
         double z = MeanCurve.coeff(i,0);
         /*
-        //Here we consturct Ai for each vertex
-        //And we calculate s, vector h, vector t.
-        if(true)
+         
+         {
+         Vertex *pV = vList[i];
+         int K = pV->Valence();
+         Eigen::MatrixXd Ati(3*(K+1), 7);
+         Eigen::VectorXd bti(3*(K+1));
+         Eigen::VectorXd sht(7);
+         double vx = pV->Position()[0];
+         double vy = pV->Position()[1];
+         double vz = pV->Position()[2];
+         Ati(0, 0) = vx;
+         Ati(0, 1) = 0;
+         Ati(0, 2) = vz;
+         Ati(0, 3) = -vy;
+         Ati(0, 4) = 1;
+         Ati(0, 5) = 0;
+         Ati(0, 6) = 0;
+         bti(0) = vx;
+         
+         Ati(1, 0) = vy;
+         Ati(1, 1) = -vz;
+         Ati(1, 2) = 0;
+         Ati(1, 3) = vx;
+         Ati(1, 4) = 0;
+         Ati(1, 5) = 1;
+         Ati(1, 6) = 0;
+         bti(1) = vy;
+         
+         Ati(2, 0) = vz;
+         Ati(2, 1) = vy;
+         Ati(2, 2) = -vx;
+         Ati(2, 3) = 0;
+         Ati(2, 4) = 0;
+         Ati(2, 5) = 0;
+         Ati(2, 6) = 1;
+         bti(2) = vz;
+         
+         OneRingVertex ring(pV);
+         Vertex *pCurr = NULL;
+         int counter = 0;
+         while( (pCurr=ring.NextVertex()) )
+         {
+         counter++;
+         vx = pCurr->Position()[0];
+         vy = pCurr->Position()[1];
+         vz = pCurr->Position()[2];
+         
+         Ati(counter*3, 0) = vx;
+         Ati(counter*3, 1) = 0;
+         Ati(counter*3, 2) = vz;
+         Ati(counter*3, 3) = -vy;
+         Ati(counter*3, 4) = 1;
+         Ati(counter*3, 5) = 0;
+         Ati(counter*3, 6) = 0;
+         bti(counter*3) = vx;
+         
+         Ati(counter*3+1, 0) = vy;
+         Ati(counter*3+1, 1) = -vz;
+         Ati(counter*3+1, 2) = 0;
+         Ati(counter*3+1, 3) = vx;
+         Ati(counter*3+1, 4) = 0;
+         Ati(counter*3+1, 5) = 1;
+         Ati(counter*3+1, 6) = 0;
+         bti(counter*3+1) = vy;
+         
+         Ati(counter*3+2, 0) = vz;
+         Ati(counter*3+2, 1) = vy;
+         Ati(counter*3+2, 2) = -vx;
+         Ati(counter*3+2, 3) = 0;
+         Ati(counter*3+2, 4) = 0;
+         Ati(counter*3+2, 5) = 0;
+         Ati(counter*3+2, 0) = 1;
+         bti(counter*3+2) = vz;
+         }
+         Eigen::MatrixXd AT = Ati.transpose();
+         Eigen::MatrixXd AA = AT*Ati;
+         sht = AA.reverse()*AT*bti;
+         bool isNan = false;
+         for(int j = 0; j < 7; j++)
+         {
+         if ((sht(j) != sht(j)))
+         {
+         isNan = true;
+         }
+         }
+         if (!isNan)
+         {
+         //std::cout << sht << std::endl;
+         x = sht(0)*x - sht(3)*y + sht(2)*z +sht(4);
+         y = sht(3)*x + sht(0)*y - sht(1)*z +sht(5);
+         z = -sht(2)*x +sht(1)*y + sht(0)*z +sht(6);
+         }
+         }*/
+        b.AddEntry(i, 0, x);
+        b.AddEntry(i + numberVertice, 0, y);
+        b.AddEntry(i + 2*numberVertice, 0, z);
+    }
+    }
+    //Add handles to the vector
+    for(int i = 0; i < numberConstrian; ++i)
+    {
+        Vertex *pV = roi_list[i];
+        A.AddEntry(i + 3*numberVertice, pV->Index(), handleWeight);
+        A.AddEntry(i + 3*numberVertice + numberConstrian, pV->Index() + numberVertice, handleWeight);
+        A.AddEntry(i + 3*numberVertice + 2*numberConstrian, pV->Index() + 2*numberVertice, handleWeight);
+    }
+    
+    //Solve the linear system
+    
+    A_Original = A.ToSparseMatrix(3*numberVertice + 3*numberConstrian, 3*numberVertice);
+    A_Trans = A_Original.transpose();
+    A_Modified = A_Trans * A_Original;
+    
+    solver = new SparseLinearSystemSolver(A_Modified);
+    
+    b_ = b.ToSparseMatrix(3 * numberVertice + 3 * numberConstrian, 1);
+    SparseMatrixBuilder T;
+    
+    if(localRotation)
+    {
+        for(int i=0; i<numberVertice; ++i)
         {
             Vertex *pV = vList[i];
-            int K = pV->Valence();
-            Eigen::MatrixXd Ati(3*(K+1), 7);
-            Eigen::VectorXd bti(3*(K+1));
-            Eigen::VectorXd sht(7);
+            int K = pV->Valence(); // number of neighbor vertices
+            Eigen::MatrixXd Ati(3*K+3, 7);
+            
             double vx = pV->Position()[0];
             double vy = pV->Position()[1];
             double vz = pV->Position()[2];
@@ -201,7 +322,6 @@ void Deformer::BuildSystemMatrix() {
             Ati(0, 4) = 1;
             Ati(0, 5) = 0;
             Ati(0, 6) = 0;
-            bti(0) = vx;
             
             Ati(1, 0) = vy;
             Ati(1, 1) = -vz;
@@ -210,7 +330,6 @@ void Deformer::BuildSystemMatrix() {
             Ati(1, 4) = 0;
             Ati(1, 5) = 1;
             Ati(1, 6) = 0;
-            bti(1) = vy;
             
             Ati(2, 0) = vz;
             Ati(2, 1) = vy;
@@ -219,14 +338,12 @@ void Deformer::BuildSystemMatrix() {
             Ati(2, 4) = 0;
             Ati(2, 5) = 0;
             Ati(2, 6) = 1;
-            bti(2) = vz;
             
             OneRingVertex ring(pV);
             Vertex *pCurr = NULL;
-            int counter = 0;
+            int counter = 1;
             while( (pCurr=ring.NextVertex()) )
             {
-                counter++;
                 vx = pCurr->Position()[0];
                 vy = pCurr->Position()[1];
                 vz = pCurr->Position()[2];
@@ -238,7 +355,6 @@ void Deformer::BuildSystemMatrix() {
                 Ati(counter*3, 4) = 1;
                 Ati(counter*3, 5) = 0;
                 Ati(counter*3, 6) = 0;
-                bti(counter*3) = vx;
                 
                 Ati(counter*3+1, 0) = vy;
                 Ati(counter*3+1, 1) = -vz;
@@ -247,7 +363,6 @@ void Deformer::BuildSystemMatrix() {
                 Ati(counter*3+1, 4) = 0;
                 Ati(counter*3+1, 5) = 1;
                 Ati(counter*3+1, 6) = 0;
-                bti(counter*3+1) = vy;
                 
                 Ati(counter*3+2, 0) = vz;
                 Ati(counter*3+2, 1) = vy;
@@ -255,48 +370,63 @@ void Deformer::BuildSystemMatrix() {
                 Ati(counter*3+2, 3) = 0;
                 Ati(counter*3+2, 4) = 0;
                 Ati(counter*3+2, 5) = 0;
-                Ati(counter*3+2, 0) = 1;
-                bti(counter*3+2) = vz;
+                Ati(counter*3+2, 6) = 1;
+                
+                counter++;
             }
-            Eigen::MatrixXd AT = Ati.transpose();
-            Eigen::MatrixXd AA = AT*Ati;
-            sht = AA.reverse()*AT*bti;
-            bool isNan = false;
-            for(int j = 0; j < 7; j++)
+            
+            Eigen::MatrixXd Apinv = eigenPinv(Ati);
+            
+            double deltax = MeanCurve.coeff(i, 0);
+            double deltay = MeanCurve.coeff(i, 1);
+            double deltaz = MeanCurve.coeff(i, 2);
+            
+            
+            
+            
+            T.AddEntry(i, i, deltax*Apinv(0, 0) - deltay*Apinv(3, 0) + deltaz*Apinv(2, 0) );
+            T.AddEntry(i, i+numberVertice, deltax*Apinv(0, 1) - deltay*Apinv(3, 1) + deltaz*Apinv(2, 1) );
+            T.AddEntry(i, i+2*numberVertice, deltax*Apinv(0, 2) - deltay*Apinv(3, 2) + deltaz*Apinv(2, 2) );
+            
+            T.AddEntry(i+numberVertice, i, deltax*Apinv(3, 0) + deltay*Apinv(0, 0) - deltaz*Apinv(1, 0) );
+            T.AddEntry(i+numberVertice, i+numberVertice, deltax*Apinv(3, 1) + deltay*Apinv(0, 1) - deltaz*Apinv(1, 1) );
+            T.AddEntry(i+numberVertice, i+2*numberVertice, deltax*Apinv(3, 2) + deltay*Apinv(0, 2) - deltaz*Apinv(1, 2) );
+            
+            T.AddEntry(i+2*numberVertice, i, -deltax*Apinv(2, 0) + deltay*Apinv(1, 0) + deltaz*Apinv(0, 0) );
+            T.AddEntry(i+2*numberVertice, i+numberVertice, -deltax*Apinv(2, 1) + deltay*Apinv(1, 1) + deltaz*Apinv(0, 1) );
+            T.AddEntry(i+2*numberVertice, i+2*numberVertice, -deltax*Apinv(2, 2) + deltay*Apinv(1, 2) + deltaz*Apinv(0, 2) );
+            
+            OneRingVertex ring2(pV);
+            Vertex *pCurr2 = NULL;
+            int counter2 = 1;
+            while( (pCurr2=ring2.NextVertex()) )
             {
-                if ((sht(j) != sht(j)))
-                {
-                    isNan = true;
-                }
+                int index = pCurr2->Index();
+                T.AddEntry(i, index, deltax*Apinv(0, 3*counter2) - deltay*Apinv(3, 3*counter2) + deltaz*Apinv(2, 3*counter2) );
+                T.AddEntry(i, index+numberVertice, deltax*Apinv(0, 3*counter2+1) - deltay*Apinv(3, 3*counter2+1) + deltaz*Apinv(2, 3*counter2+1) );
+                T.AddEntry(i, index+2*numberVertice, deltax*Apinv(0, 3*counter2+2) - deltay*Apinv(3, 3*counter2+2) + deltaz*Apinv(2, 3*counter2+2) );
+                
+                T.AddEntry(i+numberVertice, index, deltax*Apinv(3, 3*counter2) + deltay*Apinv(0, 3*counter2) - deltaz*Apinv(1, 3*counter2)  );
+                T.AddEntry(i+numberVertice, index+numberVertice, deltax*Apinv(3, 3*counter2+1) + deltay*Apinv(0, 3*counter2+1) - deltaz*Apinv(1, 3*counter2+1)  );
+                T.AddEntry(i+numberVertice, index+2*numberVertice, deltax*Apinv(3, 3*counter2+2) + deltay*Apinv(0, 3*counter2+2) - deltaz*Apinv(1, 3*counter2+2)  );
+                
+                T.AddEntry(i+2*numberVertice, index, -deltax*Apinv(2, 3*counter2) + deltay*Apinv(1, 3*counter2) + deltaz*Apinv(0, 3*counter2)  );
+                T.AddEntry(i+2*numberVertice, index+numberVertice, -deltax*Apinv(2, 3*counter2+1) + deltay*Apinv(1, 3*counter2+1) + deltaz*Apinv(0, 3*counter2+1)  );
+                T.AddEntry(i+2*numberVertice, index+2*numberVertice, -deltax*Apinv(2, 3*counter2+2) + deltay*Apinv(1, 3*counter2+2) + deltaz*Apinv(0, 3*counter2+2)  );
+                
+                counter2++;
             }
-            if (!isNan)
-            {
-                //std::cout << sht << std::endl;
-                x = sht(0)*x - sht(3)*y + sht(2)*z +sht(4);
-                y = sht(3)*x + sht(0)*y - sht(1)*z +sht(5);
-                z = -sht(2)*x +sht(1)*y + sht(0)*z +sht(6);
-            }
-        }*/
-        b.AddEntry(i, 0, x);
-        b.AddEntry(i + numberVertice, 0, y);
-        b.AddEntry(i + 2*numberVertice, 0, z);
+        }
     }
     
-    //Add handles to the vector
-    for(int i = 0; i < numberConstrian; ++i)
-    {
-        Vertex *pV = roi_list[i];
-        A.AddEntry(i + 3*numberVertice, pV->Index(), handleWeight);
-        A.AddEntry(i + 3*numberVertice + numberConstrian, pV->Index() + numberVertice, handleWeight);
-        A.AddEntry(i + 3*numberVertice + 2*numberConstrian, pV->Index() + 2*numberVertice, handleWeight);
-    }
+    // Build the linear system..
     
-    //Solve the linear system
-    A_Original = A.ToSparseMatrix(3*numberVertice + 3*numberConstrian, 3*numberVertice);
+    Eigen::SparseMatrix<double> T_ = T.ToSparseMatrix(3*numberVertice + 3*numberConstrian, 3*numberVertice);
+    A_Original = (A_Original - T_);
+    
     A_Trans = A_Original.transpose();
-    A_Modified = A_Trans * A_Original;
+    A_Modified = A_Trans*A_Original;
     
     solver = new SparseLinearSystemSolver(A_Modified);
-    b_ = b.ToSparseMatrix(3 * numberVertice + 3 * numberConstrian, 1);
-    
 }
+
