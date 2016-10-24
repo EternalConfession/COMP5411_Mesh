@@ -12,8 +12,8 @@ public:
     ~Deformer();
 
     // editing
+    void BuildSystemMatrix(bool localRotation);
     void Deform();
-
 private:
     // Build left hand side matrix and pre-factorize it
     void BuildSystemMatrix();
@@ -24,7 +24,7 @@ private:
     Eigen::SparseMatrix<double> b_, A_Trans;
 
     double handleWeight; // The handle weight in the linear system to be solved
-    bool localRotation; // true for estimating local rotations, false for naive Laplacian editing
+    bool localRotation = true; // true for estimating local rotations, false for naive Laplacian editing
 };
 
 
